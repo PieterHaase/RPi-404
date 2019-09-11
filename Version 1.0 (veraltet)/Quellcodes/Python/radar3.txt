@@ -1,0 +1,215 @@
+import time
+import RPi.GPIO as GPIO
+import paho.mqtt.client as mqtt 
+
+
+
+#definierung des MQTT Brokers
+url = "broker.mqttdashboard.com"
+topic = "haw/dmi/mt/its/ss18/rpi-404/radar" 
+
+
+
+calibrated = False
+connected = False
+
+#def: verbindungsaufbau mit dem Broker
+def on_connect(client , userdata , flags , rc):
+	global connected 
+	connected = True 
+
+client = mqtt.Client()
+client.on_connect = on_connect
+client.connect(url , 1883, 60) 
+
+
+
+#GPIO Modus auf BCM setzen
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+
+def kal(): 
+# Pin GPIO 21 als Eingang festlegen
+	GPIO.setup(21, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+
+#Solange GPIO Input ein Eingangssignal hat, dreht Motor nach Rechts, wird durch Aktivierung der Lichtschranke unterbrochen und dreht 200 Grad nach links
+	while GPIO.input(21) == GPIO.HIGH:
+        	RIGHT_TURN(1)
+
+	LEFT_TURN(200)
+	global calibrated
+	calibrated = True
+	global winkel
+	winkel = 0
+
+
+#zuweisung der GPIO Pins
+A= 4 
+B= 17 
+C= 27
+D= 22
+
+#GPIO Pins als Ausgang Festlegen
+GPIO.setup(A, GPIO.OUT)
+GPIO.setup(B, GPIO.OUT)
+GPIO.setup(C, GPIO.OUT)
+GPIO.setup(D, GPIO.OUT)
+
+
+"""
+      1  2  3  4  5  6  7  8
+      
+Pin1  x  x                 x
+Pin2     x  x  x
+Pin3           x  x  x
+Pin4                 x  x  x
+
+"""
+
+def GPIO_SETUP(a,b,c,d):
+    GPIO.output(A, a)
+    GPIO.output(B, b)
+    GPIO.output(C, c)
+    GPIO.output(D, d)
+    time.sleep(0.001)
+
+def RIGHT_TURN(deg):
+    global winkel
+    startwinkel = winkel
+
+    full_circle = 510.0
+    degree = full_circle/360*deg
+    GPIO_SETUP(0,0,0,0)
+
+    while degree > 0.0:
+        GPIO_SETUP(1,0,0,0)
+        GPIO_SETUP(1,1,0,0)
+        GPIO_SETUP(0,1,0,0)
+        GPIO_SETUP(0,1,1,0)
+        GPIO_SETUP(0,0,1,0)
+        GPIO_SETUP(0,0,1,1)
+        GPIO_SETUP(0,0,0,1)
+        GPIO_SETUP(1,0,0,1)
+        degree -= 1
+        delta = deg-(degree*360/full_circle)
+        global calibrated
+        if calibrated == True:
+             winkel = startwinkel - delta
+             distanz()
+
+def LEFT_TURN(deg):
+    global winkel
+    startwinkel = winkel
+    full_circle = 510.0
+    degree = full_circle/360*deg
+    GPIO_SETUP(0,0,0,0)
+
+    while degree > 0.0:
+        GPIO_SETUP(1,0,0,1)
+        GPIO_SETUP(0,0,0,1)
+        GPIO_SETUP(0,0,1,1)
+        GPIO_SETUP(0,0,1,0)
+        GPIO_SETUP(0,1,1,0)
+        GPIO_SETUP(0,1,0,0)
+        GPIO_SETUP(1,1,0,0)
+        GPIO_SETUP(1,0,0,0)
+        degree -= 1
+        delta = deg-(degree*360/full_circle)
+        #print(winkel)
+        global calibrated
+        if calibrated == True:
+            winkel = startwinkel + delta
+            distanz()
+
+
+
+winkel = 0
+
+
+#Hauptfunktion, startet die Kalibrierung, baut Verbindung zum MQTT Client auf, misst Entfernungen
+def start():
+	kal()
+	global client
+	client.loop_start()
+
+	print("Waiting for connection ", end=' ')
+	while not connected:
+        	print(".", end=' ')
+        	time.sleep(0.1)
+	print("[CONNECTED]")
+#da sich die Distanzmessung in den Funktionen Turn befindet, muss diese hier nicht erneut aufgerufen werden
+	#i = 0
+	bool = True
+	while bool == True:
+		print("right turn")
+		RIGHT_TURN(269)
+		global calibrated
+		calibrated = False
+		RIGHT_TURN(1)
+		calibrated = True
+		print("left turn") 
+		LEFT_TURN(269)
+		#i = i +  0.1
+
+
+
+    
+##########Ultrasonic Distanz Messung############################
+
+
+
+ 
+#GPIO Pins zuweisen
+GPIO_TRIGGER = 18
+GPIO_ECHO = 24
+ 
+#Richtung der GPIO-Pins festlegen (IN / OUT)
+GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
+GPIO.setup(GPIO_ECHO, GPIO.IN)
+ 
+def distanz():
+    # setze Trigger auf HIGH
+    GPIO.output(GPIO_TRIGGER, True)
+ 
+    # setze Trigger nach 0.01ms aus LOW
+    time.sleep(0.000001)
+    GPIO.output(GPIO_TRIGGER, False)
+ 
+    StartZeit = time.time()
+    StopZeit = time.time()
+ 
+    # speichere Startzeit
+    timeout = 0
+    print("Test")
+    while GPIO.input(GPIO_ECHO) == 0:
+        StartZeit = time.time()
+        timeout += 1
+        if timeout == 200:
+             break
+ 
+    # speichere Ankunftszeit
+    print("Test2")
+    while GPIO.input(GPIO_ECHO) == 1:
+        StopZeit = time.time()
+ 
+    # Zeit Differenz zwischen Start und Ankunft
+    TimeElapsed = StopZeit - StartZeit
+    # mit der Schallgeschwindigkeit (34300 cm/s) multiplizieren
+    # und durch 2 teilen, da hin und zurueck
+    distanz = (TimeElapsed * 34300) / 2
+    global winkel
+    global topic
+    stri = str(-winkel) + ',' +str(distanz)
+    client.publish(topic , stri)
+
+    print(distanz)
+    return distanz
+ 
+
+#kal()
+#start()
+#GPIO_SETUP(0,0,0,0)
+
+
+

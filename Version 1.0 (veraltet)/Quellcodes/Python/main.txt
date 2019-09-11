@@ -1,0 +1,23 @@
+#import der multiprocessing Bibliothek
+from multiprocessing import Process
+
+#import der Methoden aus den jeweiligen skripten
+from radar3 import start
+from camera_turn import camera_start 
+from testfahrt import drive_go
+
+#initialisierung der Prozesse
+p1 = Process(target=start)
+p2 = Process(target=camera_start)
+p3 = Process(target=drive_go)
+
+#start der jeweiligen Prozesse
+p1.start()
+p2.start()
+p3.start()
+
+#parallelisierung der Prozesse
+p1.join()
+p2.join() 
+p3.join()
+

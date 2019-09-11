@@ -1,0 +1,98 @@
+
+ 
+import RPi.GPIO as GPIO
+from time import sleep
+import paho.mqtt.client as mqtt
+import multiprocessing
+
+GPIO.setmode(GPIO.BCM)
+
+#Pulsweitenmodulation, zuweisung der GPIO Pins im BCM Modus
+
+PWM_FORWARD_LEFT_PIN = 13	# IN1 - Forward Drive
+PWM_REVERSE_LEFT_PIN = 6	# IN2 - Reverse Drive
+PWM_FORWARD_RIGHT_PIN = 26	# IN1 - Forward Drive
+PWM_REVERSE_RIGHT_PIN = 19	# IN2 - Reverse Drive
+
+#GPIO Pins als output definieren
+GPIO.setup(PWM_FORWARD_LEFT_PIN, GPIO.OUT)
+GPIO.setup(PWM_REVERSE_LEFT_PIN, GPIO.OUT)
+GPIO.setup(PWM_FORWARD_RIGHT_PIN, GPIO.OUT)
+GPIO.setup(PWM_REVERSE_RIGHT_PIN, GPIO.OUT)
+
+#zuweisung der Variablen in Verwendung mit der Pulsweitenmodulations Funktion aus der Bibliothek GPIO, verwendete H-Brücke benötigt eine Frequent von 1K HZ
+forwardLeft = GPIO.PWM(PWM_FORWARD_LEFT_PIN, 1000)
+reverseLeft = GPIO.PWM(PWM_REVERSE_LEFT_PIN, 1000)
+forwardRight = GPIO.PWM(PWM_FORWARD_RIGHT_PIN, 1000)
+reverseRight = GPIO.PWM(PWM_REVERSE_RIGHT_PIN, 1000)
+
+
+#definition der Broker Adresse 
+
+url = "broker.mqttdashboard.com"
+topic = "haw/dmi/mt/its/ss18/rpi-404/steering"
+client = mqtt.Client()         #Client object
+
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code "+str(rc))
+    client.subscribe(topic)
+
+def on_message(client, userdata, msg):
+
+
+#wenn durch MQTT Broker ein "R" empfangen wird, wird der Wert (-1 bis 1 ) als DutyCycle gesetzt, welcher die Geschwindigkeit bestimmt , rechte Motoren werden aktiviert
+    payload = msg.payload.decode('utf-8')
+    print("Payload: " + payload)
+    
+    if "R" in payload:
+        rightValue = float(payload[1:len(payload)])
+        rightValue *= 100
+        if rightValue <= 0:
+            #forwardRight.value = rightValue
+            #reverseRight.value = 0
+            forwardRight.ChangeDutyCycle(-rightValue)
+            reverseRight.ChangeDutyCycle(0)
+            #print(forwardRight.value)
+        else:
+            #reverseRight.value = -rightValue
+            #forwardRight.value = 0
+            reverseRight.ChangeDutyCycle(rightValue)
+            forwardRight.ChangeDutyCycle(0)
+   
+wenn durch MQTT Broker ein "L" empfangen wird, wird der Wert (-1 bis 1 ) als DutyCycle gesetzt, welcher die Geschwindigkeit bestimmt, linke Motoren werden aktiviert
+    if "L" in payload:
+        leftValue = float(payload[1:len(payload)])
+        leftValue *= 100
+        if leftValue <= 0:
+            #forwardLeft.value = leftValue
+            #reverseLeft.value = 0
+            forwardLeft.ChangeDutyCycle(-leftValue)
+            reverseLeft.ChangeDutyCycle(0)
+        else:
+            #reverseLeft.value = -leftValue
+            #forwardLeft.value = 0
+            reverseLeft.ChangeDutyCycle(leftValue)
+            forwardLeft.ChangeDutyCycle(0)
+    
+#Main Funktion, verbindung zum MQTT Broker wird aufgebaut, Funktionen zum Fahren werden aufgerufen
+def drive_go():    
+
+	forwardLeft.start(0)
+	reverseLeft.start(0)
+	forwardRight.start(0)
+	reverseRight.start(0)
+
+
+	client.on_connect = on_connect #Callbacks registrieren
+	client.on_message = on_message
+	client.connect(url, 1883, 60)  #Connect
+	client.loop_forever()          #Abarbeiten von Paketen
+
+    
+    
+ 
+#drive_go()
+
+
+

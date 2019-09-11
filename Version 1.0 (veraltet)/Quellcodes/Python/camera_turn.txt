@@ -1,0 +1,139 @@
+import time
+import RPi.GPIO as GPIO
+import paho.mqtt.client as mqtt
+
+#GPIO in BCM Zählweise  verwenden
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+#zuweisung der GPIO Pins
+A = 5
+B = 12
+C = 23
+D = 20
+
+#GPIO Porst als Ausgänge definieren
+GPIO.setup(A, GPIO.OUT)
+GPIO.setup(B, GPIO.OUT)
+GPIO.setup(C, GPIO.OUT)
+GPIO.setup(D, GPIO.OUT)
+
+current_state = 0
+calibrated = False
+
+client = mqtt.Client()
+"""
+      1  2  3  4  5  6  7  8
+      
+Pin1  x  x                 x
+Pin2     x  x  x
+Pin3           x  x  x
+Pin4                 x  x  x
+
+"""
+
+
+def kal(): 
+# Pin GPIO 16  als Eingang festlegen
+	GPIO.setup(16, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+	i = 0 
+# Schleifenzähler
+	c = 0
+#linksdrehung, bis GPIO Eingangssignal >= 1,5 V (Trigger Lichtschranke) , dann Rechtsdrehung um 135 Grad 
+	while GPIO.input(16) == GPIO.HIGH:
+        	LEFT_TURN(1)
+
+	RIGHT_TURN(135)
+	global calibrated
+	calibrated = True
+
+
+
+
+def GPIO_SETUP(a,b,c,d):
+    GPIO.output(A, a)
+    GPIO.output(B, b)
+    GPIO.output(C, c)
+    GPIO.output(D, d)
+    time.sleep(0.001)
+
+def RIGHT_TURN(deg):
+
+    full_circle = 510.0
+    degree = full_circle/360*deg
+    GPIO_SETUP(0,0,0,0)
+
+    while degree > 0.0:
+        GPIO_SETUP(1,0,0,0)
+        GPIO_SETUP(1,1,0,0)
+        GPIO_SETUP(0,1,0,0)
+        GPIO_SETUP(0,1,1,0)
+        GPIO_SETUP(0,0,1,0)
+        GPIO_SETUP(0,0,1,1)
+        GPIO_SETUP(0,0,0,1)
+        GPIO_SETUP(1,0,0,1)
+        degree -= 1
+
+def LEFT_TURN(deg):
+
+    full_circle = 510.0
+    degree = full_circle/360*deg
+    GPIO_SETUP(0,0,0,0)
+
+    while degree > 0.0:
+        GPIO_SETUP(1,0,0,1)
+        GPIO_SETUP(0,0,0,1)
+        GPIO_SETUP(0,0,1,1)
+        GPIO_SETUP(0,0,1,0)
+        GPIO_SETUP(0,1,1,0)
+        GPIO_SETUP(0,1,0,0)
+        GPIO_SETUP(1,1,0,0)
+        GPIO_SETUP(1,0,0,0)
+        degree -= 1
+
+
+
+
+
+#MQTT Broker Setup   
+url = "broker.mqttdashboard.com"
+topic = "haw/dmi/mt/its/ss18/rpi-404/camera"
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code "+str(rc))
+    client.subscribe(topic)
+	
+#Kommunikation mit dem MQTT Broker    
+def on_message(client, userdata, msg):
+	payload = msg.payload.decode('utf-8')
+	global calibrated
+#empfangen des Kamerawinkels von der Androidapp und Bewegung des Motors, wenn Payload das Wort Calibrated enthält wird die Kalibrierungsfunktion aufgerufen
+	if calibrated == True:
+		global current_state
+		if "C" in payload:
+			app_angle = int(payload[1:len(payload)])
+			motor_angle = app_angle - current_state
+			print(motor_angle)
+			if motor_angle >= 0:
+				RIGHT_TURN(motor_angle)
+				GPIO_SETUP(0,0,0,0)
+				current_state = app_angle
+			else:
+				LEFT_TURN(-motor_angle)
+				GPIO_SETUP(0,0,0,0)
+				current_state = app_angle
+	if "calibrate" in payload:
+		calibrated = False;
+		kal()
+#Main Funktion, starten der Kalibrierung, verbindung zum MQTT Broker und Empfang von Nachrichten der Android App 
+def camera_start():
+	kal()
+	client.on_connect = on_connect #Callbacks registrieren
+	client.on_message = on_message	
+	client.connect(url, 1883, 60) 
+	client.loop_forever() #Abarbeite
+
+
+#kal()
+#camera_start()
+
